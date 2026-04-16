@@ -1,0 +1,21 @@
+{
+  "default_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "log_level": "INFO",
+  "pipelines": [
+    {
+      "name": "daily-sales-etl",
+      "alert_on": ["failure", "timeout"],
+      "retry_count": 2,
+      "timeout_seconds": 60,
+      "tags": ["sales", "daily"]
+    },
+    {
+      "name": "user-sync",
+      "webhook_url": "https://hooks.slack.com/services/OTHER/WEBHOOK/URL",
+      "alert_on": ["failure"],
+      "retry_count": 0,
+      "timeout_seconds": 30,
+      "tags": ["users"]
+    }
+  ]
+}
