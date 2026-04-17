@@ -1,65 +1,75 @@
 """Configuration loading and validation for pipewatch."""
 
-import os
+from __future__ import annotations
+
 import json
+import os
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from pipewatch.alert_policy import AlertPolicy
 
 
 @dataclass
 class PipelineConfig:
     name: str
-    webhook_url: str
-    alert_on: List[str] = field(default_factory=lambda: ["failure"])
-    retry_count: int = 0
-    timeout_seconds: int = 30
-    tags: List[str] = field(default_factory=list)
+    command: str
+    webhook: Optional[str] = None
+    timeout: int = 60
+    policy: AlertPolicy = field(default_factory=AlertPolicy)
 
 
 @dataclass
 class AppConfig:
-    pipelines: List[PipelineConfig] = field(default_factory=list)
-    default_webhook_url: Optional[str] = None
-    log_level: str = "INFO"
+    pipelines: List[PipelineConfig]
+    default_webhook: Optional[str] = None
+    history_path: str = "pipewatch_history.jsonl"
 
 
-def load_config(path: str) -> AppConfig:
-    """Load and parse configuration from a JSON file."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Config file not found: {path}")
-
-    with open(path, "r") as f:
-        raw = json.load(f)
-
-    pipelines = [
-        PipelineConfig(
-            name=p["name"],
-            webhook_url=p.get("webhook_url", raw.get("default_webhook_url", "")),
-            alert_on=p.get("alert_on", ["failure"]),
-            retry_count=p.get("retry_count", 0),
-            timeout_seconds=p.get("timeout_seconds", 30),
-            tags=p.get("tags", []),
-        )
-        for p in raw.get("pipelines", [])
-    ]
-
-    return AppConfig(
-        pipelines=pipelines,
-        default_webhook_url=raw.get("default_webhook_url"),
-        log_level=raw.get("log_level", "INFO"),
+def _parse_policy(raw: Dict[str, Any]) -> AlertPolicy:
+    return AlertPolicy(
+        min_streak=raw.get("min_streak", 1),
+        cooldown_minutes=raw.get("cooldown_minutes", 0),
     )
 
 
-def validate_config(config: AppConfig) -> List[str]:
-    """Return a list of validation error messages, empty if valid."""
-    errors = []
-    for pipeline in config.pipelines:
-        if not pipeline.name:
-            errors.append("Pipeline entry is missing a name.")
-        if not pipeline.webhook_url:
-            errors.append(f"Pipeline '{pipeline.name}' has no webhook_url and no default is set.")
-        valid_events = {"failure", "success", "timeout"}
-        for event in pipeline.alert_on:
-            if event not in valid_events:
-                errors.append(f"Pipeline '{pipeline.name}' has unknown alert event: '{event}'.")
+def load_config(path: str) -> AppConfig:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    default_webhook = data.get("default_webhook")
+    history_path = data.get("history_path", "pipewatch_history.jsonl")
+
+    pipelines = []
+    for raw in data.get("pipelines", []):
+        policy_raw = raw.get("alert_policy", data.get("alert_policy", {}))
+        pipelines.append(
+            PipelineConfig(
+                name=raw["name"],
+                command=raw["command"],
+                webhook=raw.get("webhook", default_webhook),
+                timeout=raw.get("timeout", 60),
+                policy=_parse_policy(policy_raw),
+            )
+        )
+
+    return AppConfig(
+        pipelines=pipelines,
+        default_webhook=default_webhook,
+        history_path=history_path,
+    )
+
+
+def validate_config(cfg: AppConfig) -> List[str]:
+    errors: List[str] = []
+    names = [p.name for p in cfg.pipelines]
+    if len(names) != len(set(names)):
+        errors.append("Duplicate pipeline names detected.")
+    for p in cfg.pipelines:
+        if not p.command.strip():
+            errors.append(f"Pipeline '{p.name}' has an empty command.")
+        if p.timeout <= 0:
+            errors.append(f"Pipeline '{p.name}' timeout must be > 0.")
     return errors

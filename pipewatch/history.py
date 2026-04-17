@@ -1,63 +1,72 @@
-"""Persist and query pipeline run history to a local JSON file."""
+"""Lightweight append-only run history stored as newline-delimited JSON."""
+
 from __future__ import annotations
 
 import json
 import os
 from datetime import datetime, timezone
-from typing import List, Optional
-
-DEFAULT_HISTORY_FILE = ".pipewatch_history.json"
+from typing import Any, Dict, List, Optional
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(tz=timezone.utc).isoformat()
 
 
 def record_run(
-    name: str,
+    pipeline: str,
     success: bool,
-    exit_code: int,
+    command: str,
     duration: float,
-    history_file: str = DEFAULT_HISTORY_FILE,
-) -> dict:
-    """Append a run record to the history file and return the record."""
-    record = {
-        "pipeline": name,
+    path: str,
+    timestamp: Optional[str] = None,
+) -> None:
+    """Append a run record to *path* (creates file if absent)."""
+    entry: Dict[str, Any] = {
+        "pipeline": pipeline,
         "success": success,
-        "exit_code": exit_code,
-        "duration_seconds": round(duration, 3),
-        "timestamp": _now_iso(),
+        "command": command,
+        "duration_s": round(duration, 3),
+        "timestamp": timestamp or _now_iso(),
     }
-    entries = load_history(history_file)
-    entries.append(record)
-    with open(history_file, "w") as fh:
-        json.dump(entries, fh, indent=2)
-    return record
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry) + "\n")
 
 
-def load_history(history_file: str = DEFAULT_HISTORY_FILE) -> List[dict]:
-    """Return all history entries, or an empty list if the file is absent."""
-    if not os.path.exists(history_file):
+def load_history(path: str) -> List[Dict[str, Any]]:
+    """Return all records from *path*; empty list if file missing."""
+    if not os.path.exists(path):
         return []
-    with open(history_file) as fh:
-        return json.load(fh)
+    records = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return records
 
 
-def last_failure(name: str, history_file: str = DEFAULT_HISTORY_FILE) -> Optional[dict]:
-    """Return the most recent failed run for *name*, or None."""
-    entries = load_history(history_file)
-    for entry in reversed(entries):
-        if entry["pipeline"] == name and not entry["success"]:
-            return entry
-    return None
+def last_failure(pipeline: str, path: str) -> Optional[Dict[str, Any]]:
+    """Return the most recent failure record for *pipeline*, or None."""
+    records = [
+        r for r in load_history(path)
+        if r.get("pipeline") == pipeline and not r.get("success", True)
+    ]
+    return records[-1] if records else None
 
 
-def failure_streak(name: str, history_file: str = DEFAULT_HISTORY_FILE) -> int:
-    """Return how many consecutive failures *name* has at the tail of history."""
-    entries = [e for e in load_history(history_file) if e["pipeline"] == name]
+def failure_streak(pipeline: str, path: str) -> int:
+    """Return the current consecutive failure count for *pipeline*."""
+    records = [
+        r for r in load_history(path)
+        if r.get("pipeline") == pipeline
+    ]
     streak = 0
-    for entry in reversed(entries):
-        if not entry["success"]:
+    for record in reversed(records):
+        if not record.get("success", True):
             streak += 1
         else:
             break
