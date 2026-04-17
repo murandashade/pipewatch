@@ -31,19 +31,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_and_validate(config_path: Path):
+    """Load and validate config, printing errors to stderr on failure.
+
+    Returns the config object on success, or None on failure.
+    """
+    try:
+        cfg = load_config(config_path)
+        validate_config(cfg)
+        return cfg
+    except FileNotFoundError:
+        print(f"[pipewatch] Config file not found: {config_path}", file=sys.stderr)
+    except ValueError as exc:
+        print(f"[pipewatch] Invalid config: {exc}", file=sys.stderr)
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     config_path = Path(args.config)
-    try:
-        cfg = load_config(config_path)
-        validate_config(cfg)
-    except FileNotFoundError:
-        print(f"[pipewatch] Config file not found: {config_path}", file=sys.stderr)
-        return 2
-    except ValueError as exc:
-        print(f"[pipewatch] Invalid config: {exc}", file=sys.stderr)
+    cfg = _load_and_validate(config_path)
+    if cfg is None:
         return 2
 
     if args.dry_run:
