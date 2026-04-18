@@ -49,6 +49,25 @@ def test_run_all_sends_alert_for_failure(config_file):
     assert mock_send.call_args[0][0] == "https://hooks.example.com/default"
 
 
+def test_run_all_no_alert_when_all_pass():
+    """Webhook should not be called when every pipeline succeeds."""
+    data = {
+        "default_webhook_url": "https://hooks.example.com/default",
+        "pipelines": [
+            {"name": "ok-pipe", "command": "exit 0"},
+        ],
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(data, f)
+        tmp_path = f.name
+    try:
+        with patch("pipewatch.monitor.send_webhook") as mock_send:
+            run_all(tmp_path)
+        mock_send.assert_not_called()
+    finally:
+        os.unlink(tmp_path)
+
+
 def test_summarise_all_pass():
     results = [
         RunResult("a", 0, "", "", 1.0),
