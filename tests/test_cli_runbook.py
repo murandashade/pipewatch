@@ -50,3 +50,15 @@ def test_list_empty(rf, capsys):
     rc = handle_runbook(args)
     assert rc == 0
     assert "No runbooks" in capsys.readouterr().out
+
+
+def test_list_shows_pipelines(rf, capsys):
+    from pipewatch.runbook import add_runbook
+    add_runbook("etl", "https://wiki/etl", path=rf)
+    add_runbook("ingest", "https://wiki/ingest", path=rf)
+    args = _Args(runbook_cmd="list", file=rf)
+    rc = handle_runbook(args)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "etl" in out
+    assert "ingest" in out
