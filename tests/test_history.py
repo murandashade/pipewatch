@@ -25,6 +25,14 @@ def test_record_run_creates_file(hist_file):
     assert rec["duration_seconds"] == 1.23
 
 
+def test_record_run_includes_timestamp(hist_file):
+    """Each recorded run should include a timestamp field."""
+    rec = record_run("etl", True, 0, 1.0, hist_file)
+    assert "timestamp" in rec
+    assert isinstance(rec["timestamp"], str)
+    assert len(rec["timestamp"]) > 0
+
+
 def test_record_run_appends(hist_file):
     record_run("etl", True, 0, 1.0, hist_file)
     record_run("etl", False, 1, 2.0, hist_file)
@@ -48,6 +56,12 @@ def test_last_failure_returns_most_recent(hist_file):
 def test_last_failure_none_when_all_pass(hist_file):
     record_run("etl", True, 0, 1.0, hist_file)
     assert last_failure("etl", hist_file) is None
+
+
+def test_last_failure_unknown_pipeline(hist_file):
+    """last_failure should return None for a pipeline with no recorded runs."""
+    record_run("etl", False, 1, 1.0, hist_file)
+    assert last_failure("other", hist_file) is None
 
 
 def test_failure_streak_consecutive(hist_file):
